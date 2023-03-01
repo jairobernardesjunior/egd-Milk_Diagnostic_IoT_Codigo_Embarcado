@@ -1,0 +1,7 @@
+model: md001
+int_seg: 60000
+dif_dia: 0
+dif_hora: 0
+qtd_fone: 2
+fone: +5534xxxxxxxxx
+fone: +5534xxxxxxxxx
