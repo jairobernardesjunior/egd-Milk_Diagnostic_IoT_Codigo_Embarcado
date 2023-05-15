@@ -1,0 +1,19 @@
+00 origem:   ;000001;         (código do estabelecimento fornecedor de leite)
+01 model:    ;md001;          (modelo do aparelho)
+02 int_seg:  ;30;             (intervalo em segundos para leitura da temperatura)
+03 dif_dia:  ;00;             (diferença do dia do gps)
+04 dif_hora: ;-3;             (diferença da hora do gps)
+05 fone1:    ;+5534999700463; (nro primeiro celular - proprietário - +ppddxxxxxxxxxx)
+06 fone2:    ;+5534992528004; (nro segundo celular - captação - se não existir deve escrever 'sem')
+07 limit_sms:;200;            (limite diário de envio de sms do plano móvel - chip celular)
+08 tmin:     ;004.00;         (temperatura mínima do leite °C)
+09 tmax:     ;007.00;         (temperatura máxima do leite °C)
+10 tideal:   ;005.00;         (temperatura ideal do leite °C)
+11 int_env:  ;00020;          (intervalo em segundos de leitura e envio de sms - verifique o limite diário de sms do plano)
+ 
+* Atenção: os dados devem ser informados sempre nesse formato
+respeitando sempre o tamanho e posição dos mesmos.
+* o ponto e vírgula fala para o programa qual o valor deve ser
+capturado e utilizado para os cálculos.
+
+***** Não remova nenhum ; - o programa não funcionará.
