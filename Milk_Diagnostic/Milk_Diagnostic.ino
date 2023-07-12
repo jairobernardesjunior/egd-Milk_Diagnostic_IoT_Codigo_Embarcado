@@ -1,6 +1,7 @@
 /*
   COLETA TEMPERATURA DO LEITE NO RESERVATÓRIO E ENVIA POR SMS
-  ARDUINO MEGA 2560
+  E EMAIL
+  ARDUINO MEGA 2560 WIFI
   ===========================================================
   ===========================================================
 */
@@ -15,7 +16,7 @@ int pinCS = 53; // Connect with digital 53
 
 int origem, int_seg, dif_dia, dif_hora, int_env, limite_sms;
 String origems, model, fone1, fone2;
-float tmin, tmax, tideal;
+float tmin, tmax, tideal, dif_tbrusca;
 
 // GPS - GPS6MV2 - Connect with pin TX18 and TX19
 #include <TinyGPS.h>
@@ -46,12 +47,12 @@ SoftwareSerial mySerial(4, 3); //Cria objeto mySerial passando como parâmetro a
 
 // GERAL
 File milk_arq;
-byte day_ante, hour_ant, minute_ant, second_ant;
-String dgps, tempex, tempsonda, tempmsg, smsg, tldata, tlhora;
-int dif_sec, dif_sec_sms, tl_conta, conta_media, tl_conta2, dif_sec_tleite, sms_dia, sms_enviados, int_env7;
+byte day_ante, hour_ant, minute_ant, second_ant, tbrusca;
+String dgps, tempex, tempsonda, tempmsg, sms_tbrusca, smsg, tldata, tlhora, reg_tbrusca, nro_reg_tbrusca;
+int dif_sec, dif_sec_sms, tl_conta, conta_media, tl_conta2, dif_sec_tleite, int_env7;
 int idx_int_env7, dif_sec_env7, dif_hora_salvo;
-float h_acum, t_acum, f_acum, tleite_ac2, tleite_ac, tlmedia[10], tlmedia7[7];
-bool envia_msg_temp, envia_dados_temp, enviou_alerta_sms, enviou_alerta_estouro_sms;
+float h_acum, t_acum, f_acum, tleite_ac2, tleite_ac, tlmedia[10], tlmedia7[7], temp_leite;
+bool envia_msg_temp, envia_dados_temp, envia_tbrusca;
 
 // -----------------------------------------------------------
 void reset() {
@@ -77,6 +78,8 @@ void ver_nro(String campo) {
 
     if (ii>=nros.length()) {
       //Serial.println("reset 05");
+      smsg="*** parametro numerico informado no sdcard tem algum caractere nao numerico";
+      grava_sdcard();
       reset();         
     }
   }
@@ -141,7 +144,12 @@ void move_vr(int nro, String campo) {
       ver_nro(campo);
       int_env=campo.toInt();
       //Serial.println("12 ok");
-      break;                                                 
+      break;    
+    case 13:
+      ver_nro(campo);
+      dif_tbrusca=campo.toInt();
+      //Serial.println("13 ok");
+      break;                                                   
   }
 
 }
@@ -164,6 +172,8 @@ void le_sdcard() {
   else {
     //Serial.println("***erro ao abrir md_param.txt");
     //Serial.println("reset 02");
+    smsg="*** erro ao abrir md_param.txt";
+    grava_sdcard();  
     reset();    
   }
 
@@ -184,6 +194,8 @@ void le_sdcard() {
 
     if (ii>=900) {
       //Serial.println("reset 03");
+      smsg="*** texto cartao sdcard excedeu 900 caracteres";
+      grava_sdcard();      
       reset();       
     }
 
@@ -202,6 +214,8 @@ void le_sdcard() {
 
     if (ii>=900) {
       //Serial.println("reset 04");
+      smsg="*** texto cartao sdcard excedeu 900 caracteres - final";
+      grava_sdcard();       
       reset();       
     }
 
@@ -211,11 +225,11 @@ void le_sdcard() {
       move_vr(i, campo);
     }    
 
-    if (i==12) {
+    if (i==13) {
       myFile.close();
       break;
     }
-  }
+  }  
 
 }
 // -----------------------------------------------------------
@@ -272,11 +286,7 @@ void le_gps() {
   day+=dif_dia;
   hour+=dif_hora;
 
-  if (((day!=day_ante) && (hour==0)) || (day_ante ==0)) {
-    sms_enviados=0;
-    enviou_alerta_sms=false; 
-    enviou_alerta_estouro_sms=false;  
-
+  if (((day!=day_ante) && (hour==0)) || (day_ante ==0)) { 
     day_ante=day;
   }
   
@@ -378,6 +388,10 @@ void formata_temp() {
   fm = f_acum/tl_conta;
   tlm = tleite_ac/tl_conta;
 
+  if (envia_tbrusca) {
+    tlm=temp_leite;
+  }
+
   //Serial.println(tlm);
   //Serial.println(tleite_ac);
   //Serial.println(tl_conta);
@@ -425,6 +439,8 @@ void le_tempex() {
   if (isnan(h) || isnan(t) || isnan(f)) {
     //Serial.println(F("Falha na leitura do SENSOR DHT11"));
     //Serial.println("reset 06");
+    smsg="*** falha na leitura do sensor DHT11 - tempex";
+    grava_sdcard();     
     reset();
   }
 
@@ -451,6 +467,13 @@ void le_tempex() {
   h_acum += h;
   t_acum += t;
   f_acum += f;
+
+  /*if (t<-50) {
+    smsg="*** temperatura menor que -50 no sensor DHT11 - tempex";
+    grava_sdcard();     
+    reset();  
+  } */
+
 }
 // -----------------------------------------------------------
 void le_tempsonda() { 
@@ -463,11 +486,18 @@ void le_tempsonda() {
   //Serial.print(sensors.getTempCByIndex(0)); /* Endereço do sensor */
 
   float tl= sensors.getTempCByIndex(0);
+  temp_leite=tl;
+
+  /*if (tl<-50) {
+    smsg="*** temperatura menor que -50 no sensor DS18B20 - tempsonda";
+    grava_sdcard();     
+    reset();  
+  } */ 
 
   tleite_ac += tl;
   tleite_ac2 += tl;
   tl_conta += 1;  
-  tl_conta2 += 1;
+  tl_conta2 += 1;  
   
   //Serial.println("");
   //Serial.println("tl - tlacum - tlconta - tlacum2 - tlconta2");
@@ -480,6 +510,8 @@ void le_tempsonda() {
 }
 // -----------------------------------------------------------
 void ini_sms() {
+  digitalWrite(9, HIGH);
+  
   Serial.println("");
   //Serial.println("DISPOSITIVO sms SIM800L inicializado!");
   mySerial.begin(9600);
@@ -496,6 +528,8 @@ void ini_sms() {
 }
 // -----------------------------------------------------------
 void ini_tempsonda() {
+  digitalWrite(10, HIGH);
+
   Serial.println("");
   Serial.println("SENSOR temp DS18B20 inicializado!");
   sensors.begin();
@@ -504,6 +538,8 @@ void ini_tempsonda() {
 }
 // -----------------------------------------------------------
 void ini_tempex() {
+  digitalWrite(11, HIGH);
+
   Serial.println("");
   Serial.println("SENSOR temp DHT11 inicializado!");
   dht.begin();
@@ -512,6 +548,8 @@ void ini_tempex() {
 }
 // -----------------------------------------------------------
 void ini_gps() {
+  digitalWrite(12, HIGH);  
+
   Serial.println("");
   Serial.println("GPS recebe o sinal:");
   Serial1.begin(9600); // conecta o sensor gps
@@ -520,6 +558,8 @@ void ini_gps() {
 }
 // -----------------------------------------------------------
 void ini_sdcard() {
+  digitalWrite(13, HIGH);
+
   pinMode(pinCS, OUTPUT);
   delay(1000);
   
@@ -532,8 +572,32 @@ void ini_sdcard() {
   else {
     Serial.println("SD card ***NÃO inicializado.");
     Serial.println("reset 01");
+    //smsg="*** SD card ***NAO inicializado.";
+    //grava_sdcard();      
     reset();
   }
+
+}
+// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+void verifica_tbrusca() { 
+  //Serial.println("");
+  //Serial.println(".................... verifica_tbrusca ");  
+
+  if (tbrusca==1) {
+    if ((temp_leite - tideal) >= dif_tbrusca) {
+      nro_reg_tbrusca= second_ant;   
+      envia_tbrusca= true;
+      reg_tbrusca= "rx31";
+      tbrusca=2;
+    }
+  }
+  else if (temp_leite <= tideal) {
+      envia_tbrusca= true;
+      reg_tbrusca= "rx32";
+      tbrusca=1;
+  }        
+
+  //Serial.println(".................... verifica_tbrusca "); 
 
 }
 // %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -541,11 +605,18 @@ void compara_varia() {
   //Serial.println("");
   //Serial.println(".................... compara_varia ");  
 
-  if (tlmedia[0] > tlmedia[1]) {
-    if (tlmedia[0] >= (tmax*0.90)) {
+  /*
+  Serial.println(tlmedia[0]);
+  Serial.println(tlmedia[1]);
+  Serial.println(tmax);
+  delay(2000); */
+
+  //if (tlmedia[0] > tlmedia[1]) {
+    //if (tlmedia[0] >= (tmax*0.90)) {
+    if (temp_leite >= (tmax*0.90)) {
           
       //tempmsg = "A temperatura do leite esta alta - " + tldata + " as " + tlhora + " - temp: ";
-      tempmsg = "A temperatura do leite esta alta =  ";
+      tempmsg = "A temperatura do leite esta alta (graus Celsius) =  ";
       /*
       for (int i=0; i<=9; i++) {
         char tlc[9];
@@ -556,19 +627,23 @@ void compara_varia() {
       */
 
       char tlc[9];
-      dtostrf(tlmedia[0], 9, 6, tlc);
+      //dtostrf(tlmedia[0], 9, 6, tlc);
+      dtostrf(temp_leite, 9, 6, tlc);
       String tls= tlc;
-      tempmsg = tempmsg + tls;
+      tempmsg = tempmsg + " __" + tls + "__";
 
       char tlc2[5];
       dtostrf(tmax, 5, 2, tlc2);
       String tls2= tlc2;
-      tempmsg = tempmsg + " - tmax: " + tls2;
-      tempmsg = tempmsg + " - se nao receber mais essa mensagem a temperatura estara baixando - " + tldata + " as " + tlhora;
-      envia_msg_temp=true;      
+      tempmsg = tempmsg + "  tmax: __" + tls2 + "__";
+      tempmsg = tempmsg + "  em __" + tldata + "__ as __" + tlhora + "__";
+      envia_msg_temp=true;     
+
+      //Serial.println("xxxxxxxxxxxxx " + tempmsg);
+      //delay(2000);
 
     } 
-  }
+  //}
 
   //Serial.println(".................... compara_varia "); 
 
@@ -583,7 +658,8 @@ void media_tleite() {
   }
   tlmedia[0] = tleite_ac2/tl_conta2;
  
-  if (conta_media>=9) {
+  //if (conta_media>=9) {
+  if (conta_media>=0) {
     compara_varia();
   }
   else {
@@ -619,6 +695,22 @@ void setup() {
   //Serial.println("");
   //Serial.print("setup");  
 
+  //Define a porta do led como saida
+  pinMode(13, OUTPUT);
+  pinMode(12, OUTPUT);
+  pinMode(11, OUTPUT);
+  pinMode(10, OUTPUT);
+  pinMode(9, OUTPUT);
+  pinMode(8, OUTPUT);  
+
+  //apaga o led
+  digitalWrite(13, LOW);
+  digitalWrite(12, LOW);
+  digitalWrite(11, LOW);
+  digitalWrite(10, LOW);
+  digitalWrite(9, LOW);
+  digitalWrite(8, LOW);   
+
   ini_sdcard();
   le_sdcard();
 
@@ -641,8 +733,8 @@ void setup() {
   dif_sec_env7=0;
   idx_int_env7=0;
   day_ante=0;
+  temp_leite=0;
 
-  sms_enviados=0;
   dif_hora_salvo=dif_hora;
 
   for (int i=0; i<7; i++) {
@@ -651,12 +743,17 @@ void setup() {
 
   envia_msg_temp=false;
   envia_dados_temp=false; 
-  enviou_alerta_sms=false; 
-  enviou_alerta_estouro_sms=false; 
+  envia_tbrusca=false;
+  reg_tbrusca="";
+  nro_reg_tbrusca="";
+  tbrusca=1;
 
 
 
 //.....................................................
+
+
+
 
 
 
@@ -670,9 +767,14 @@ void setup() {
   limite_sms=50;
 
 
-  int_seg=15;
-  int_env=30; 
+  int_seg=30;
+  int_env=300; 
   limite_sms=3;
+  tideal=30;
+  dif_tbrusca=0.5;
+  tmax=30;
+
+
 
 
 
@@ -680,12 +782,10 @@ void setup() {
 //.....................................................
 
   float seg_dia= 86400;
-  sms_dia=seg_dia/int_env;
   int_env7=int_env/8;
 
 
   Serial.println(seg_dia);
-  Serial.println(sms_dia);
   Serial.println(int_env7);
 }
 // ####################################################
@@ -707,6 +807,18 @@ void loop() {
 
   le_tempsonda(); 
 
+  digitalWrite(9, HIGH);
+
+  verifica_tbrusca();
+
+  if (envia_tbrusca) {
+    formata_temp();    
+    sms_tbrusca= origems + dgps + tempex + tempsonda;
+    smsg= sms_tbrusca;
+    grava_sdcard();    
+  }
+
+  // ***** verifica temperatura do leite para enviar sms
   if (dif_sec_tleite>=int_seg) {
     media_tleite();
     
@@ -717,6 +829,7 @@ void loop() {
     dif_sec_tleite=0;
   }
 
+  // desloca temperatura do leite para frente na ltmedia7
   if (dif_sec_env7>=int_env7) {
     if (idx_int_env7<7) {
       tlmedia7[idx_int_env7]=tleite_ac/tl_conta;
@@ -725,6 +838,7 @@ void loop() {
     }
   }  
 
+  // reinicia variáveis de dados do leite marca para enviar sms 
   if (dif_sec_sms>=int_env) {
     formata_temp();
     smsg= origems + dgps + tempex + tempsonda;
@@ -745,260 +859,81 @@ void loop() {
     idx_int_env7=0;     
   }
 
-  String str, str2;
+  // ***** prepara para enviar dados por sms
+  String str, str2;  
+  bool envia_msgx= false;
 
-  // ***** envia mensagem de aumento da temperatura do leite
-  if (envia_msg_temp) {
-    if (fone1!="sem") {
-      str = fone1 + " ";
-      str2 = "r2a " + tempmsg + " ";
-
-      //str2 = "msg temp alta fone1 ";
-
-      char fone1[str.length()];
-      str.toCharArray(fone1,str.length());
-
-      Serial.println("fone1...............................................");
-      Serial.println(str);
-      Serial.println(str2);
-      
-      //Serial.println("leiteeeeeeeeeeeeeeeeeeeeeeeeeeeex fone1 ");
-      //String str2 = "leiteeeeeeeeeeeeeeeeeeeeeeeeeeeex fone1 "; 
-      //Serial.println(str2);
-      //delay(3600000);
-
-      char sms1[str2.length()];
-      str2.toCharArray(sms1,str2.length());
-
-      mySerial.write(""); //limpa
-      delay(1000);       
-
-      mySerial.write("AT+CMGF=1\r\n"); //Configuração do modo SMS text
-      delay(1000);
-
-      //mySerial.write("AT+CMGS=\"5534999700463\"\r\n");
-      mySerial.write("AT+CMGS=\"");
-
-      //mySerial.write("5534999700463");
-      mySerial.write(fone1);
-      
-      mySerial.write("\"");
-      mySerial.write("\r\n");
-      delay(1000);
-      
-      //mySerial.write("Do bit Ao Byte");
-      mySerial.write(sms1);
-      delay(1000);
-      
-      mySerial.write((char)26);
-      delay(1000);
-      sms_enviados+= 1;
-
-      //Serial.println("");
-      //Serial.println("");
-      Serial.println("################### sms enviado");  
-    }   
-  } 
-  
-  // ***** envia dados do leite
-  if (envia_dados_temp) {
+  // ***** envia temperatura do leite com aumento brusco
+  if (envia_tbrusca) {
     if (fone2!="sem") {
-      if (envia_msg_temp) {
-        delay(5000);
-      }
-
       str = fone2 + " ";
-      str2 = "r1p" + origems + dgps + tempex + tempsonda + " ";
-
-      //str2 = "dados relativos ao fone tres ";
-
-      char fone2[str.length()];
-      str.toCharArray(fone2,str.length());
-
-      Serial.println("fone2...............................................");
-      Serial.println(str);
-      Serial.println(str2);      
-      
-      //Serial.println("leiteeeeeeeeeeeeeeeeeeeeeeeeeeeex fone2 ");
-      //String str2 = "leiteeeeeeeeeeeeeeeeeeeeeeeeeeeex fone2 "; 
-      //Serial.println(str2);
-      //delay(3600000);
-
-      char sms2[str2.length()];
-      str2.toCharArray(sms2,str2.length());
-
-      mySerial.write(""); //limpa
-      delay(1000);      
-
-      mySerial.write("AT+CMGF=1\r\n"); //Configuração do modo SMS text
-      delay(1000);
-
-      //mySerial.write("AT+CMGS=\"5534999700463\"\r\n");
-      mySerial.write("AT+CMGS=\"");
-
-      //mySerial.write("+5534992528004");
-      mySerial.write(fone2);
-      
-      mySerial.write("\"");
-      mySerial.write("\r\n");
-      delay(1000);
-      
-      //mySerial.write("rg01pog     1pdt 2/ 5/2023phr12:59:49pla-18.918224plo-48.230515pum46.065575ptc26.259010ptf79.266228ptl25.427254p");
-      mySerial.write(sms2);
-      delay(1000);
-      
-      mySerial.write((char)26);
-      delay(1000);
-      sms_enviados+= 1;
-
-      //Serial.println("");
-      //Serial.println("");
-      Serial.println("################### sms enviado");        
-    } 
+      str2 = reg_tbrusca + nro_reg_tbrusca + "p " + sms_tbrusca + " ";
+      envia_msgx=true;
+    }
+    envia_tbrusca=false;
   }
-
-  float smsf, limitef;
-  char smsc[6], limitec[6];
-  String smss, limites;
-
-  // ***** envia alerta da quantidade de sms que será gerado no dia comparado com a quantidade de sms contratada para o dia
-  if (!enviou_alerta_sms) {
-    if (sms_dia > (limite_sms*0.9)) {
-      if (fone2!="sem") {
-        if (envia_dados_temp) {
-          delay(5000);
-        }
-
-        limitef=limite_sms;
-        dtostrf(limitef, 6, 0, limitec);
-        limites= limitec;
-
-        smsf=sms_dia;
-        dtostrf(smsf, 6, 0, smsc);
-        smss= smsc;        
-
-        str = fone2 + " ";
-        str2 = "r2b sms a serem enviados = ..." + smss + "... passa de 90 por cento do limite contratado por dia = ..." + 
-               limites + "...  " + tldata + " as " + tlhora + " ";
-
-        //str2 = "r2b sms a serem enviados passa de 90 por cento do limite contratado por dia ";
-
-        char fone3[str.length()];
-        str.toCharArray(fone3,str.length());
-
-        Serial.println("fone2...............................................");
-        Serial.println(str);
-        Serial.println(str2);      
-        
-        //Serial.println("leiteeeeeeeeeeeeeeeeeeeeeeeeeeeex fone2 ");
-        //String str2 = "leiteeeeeeeeeeeeeeeeeeeeeeeeeeeex fone2 "; 
-        //Serial.println(str2);
-        //delay(3600000);
-
-        char sms3[str2.length()];
-        str2.toCharArray(sms3,str2.length());
-
-        mySerial.write(""); //limpa
-        delay(1000);      
-
-        mySerial.write("AT+CMGF=1\r\n"); //Configuração do modo SMS text
-        delay(1000);
-
-        //mySerial.write("AT+CMGS=\"5534999700463\"\r\n");
-        mySerial.write("AT+CMGS=\"");
-
-        //mySerial.write("+5534992528004");
-        mySerial.write(fone3);
-        
-        mySerial.write("\"");
-        mySerial.write("\r\n");
-        delay(1000);
-        
-        //mySerial.write("r2 sms a serem enviados passa de 90 por cento do limite contratado por dia ");
-        mySerial.write(sms3);
-        delay(1000);
-        
-        mySerial.write((char)26);
-        delay(1000);
-        sms_enviados+= 1;
-        enviou_alerta_sms= true;
-
-        //Serial.println("");
-        //Serial.println("");
-        Serial.println("################### sms enviado");     
-      }   
-    } 
+  // ***** envia mensagem de aumento da temperatura do leite
+  else  if (envia_msg_temp) {
+          if (fone1!="sem") {
+            str = fone1 + " ";
+            str2 = "rx2p" + origems + "    " + tempmsg + " ";
+            envia_msgx=true;
+          }
+          envia_msg_temp=false;
   }
+  // ***** envia dados do leite    
+  else  if (envia_dados_temp) {
+          if (fone2!="sem") {
+            str = fone2 + " ";
+            str2 = "rx1p" + origems + dgps + tempex + tempsonda + " ";
+            envia_msgx=true;
+          }
+          envia_dados_temp=false;              
+  }       
 
-  // ***** envia alerta da quantidade de sms enviados até agora comparado com a quantidade de sms contratada para o dia
-  if (!enviou_alerta_estouro_sms) {
-    if (sms_enviados > (limite_sms*0.9)) {
-      if (fone2!="sem") {
-        if (envia_dados_temp) {
-          delay(5000);
-        }
+  if (envia_msgx) {
+    char fonex[str.length()];
+    str.toCharArray(fonex,str.length());
 
-        limitef=limite_sms;
-        dtostrf(limitef, 6, 0, limitec);
-        limites= limitec;
+    Serial.println("fonex...............................................");
+    Serial.println(str);
+    Serial.println(str2);
 
-        smsf=sms_enviados;
-        dtostrf(smsf, 6, 0, smsc);
-        smss= smsc;        
+    char smsx[str2.length()];
+    str2.toCharArray(smsx,str2.length());
 
-        str = fone2 + " ";
-        str2 = "r2c sms enviados ate agora = ..." + smss + "... passou de 90 por cento do limite contratado por dia = ..." + 
-               limites + "...  " + tldata + " as " + tlhora + " ";
+    mySerial.write(""); //limpa
+    delay(1000);       
 
-        //str2 = "r2c sms enviados até agora passou de 90 por cento do limite contratado por dia ";
+    mySerial.write("AT+CMGF=1\r\n"); //Configuração do modo SMS text
+    delay(1000);
 
-        char fone4[str.length()];
-        str.toCharArray(fone4,str.length());
+    //mySerial.write("AT+CMGS=\"5534999700463\"\r\n");
+    mySerial.write("AT+CMGS=\"");
 
-        Serial.println("fone2...............................................");
-        Serial.println(str);
-        Serial.println(str2);      
-        
-        //Serial.println("leiteeeeeeeeeeeeeeeeeeeeeeeeeeeex fone2 ");
-        //String str2 = "leiteeeeeeeeeeeeeeeeeeeeeeeeeeeex fone2 "; 
-        //Serial.println(str2);
-        //delay(3600000);
+    //mySerial.write("5534999700463");
+    mySerial.write(fonex);
+    
+    mySerial.write("\"");
+    mySerial.write("\r\n");
+    delay(1000);
+    
+    //mySerial.write("Do bit Ao Byte");
+    mySerial.write(smsx);
+    delay(1000);
+    
+    mySerial.write((char)26);
+    delay(1000);
 
-        char sms4[str2.length()];
-        str2.toCharArray(sms4,str2.length());
-
-        mySerial.write(""); //limpa
-        delay(1000);      
-
-        mySerial.write("AT+CMGF=1\r\n"); //Configuração do modo SMS text
-        delay(1000);
-
-        //mySerial.write("AT+CMGS=\"5534999700463\"\r\n");
-        mySerial.write("AT+CMGS=\"");
-
-        //mySerial.write("+5534992528004");
-        mySerial.write(fone4);
-        
-        mySerial.write("\"");
-        mySerial.write("\r\n");
-        delay(1000);
-        
-        //mySerial.write("r3 - sms enviados até agora passou de 90 por cento do limite contratado por dia ");
-        mySerial.write(sms4);
-        delay(1000);
-        
-        mySerial.write((char)26);
-        delay(1000);
-        sms_enviados+= 1;
-        enviou_alerta_estouro_sms= true;
-
-        //Serial.println("");
-        //Serial.println("");
-        Serial.println("################### sms enviado");     
-      }   
-    } 
+    Serial.println("################### sms enviado");     
   } 
 
-  envia_msg_temp=false;
-  envia_dados_temp=false;
+  //apaga o led
+  digitalWrite(13, LOW);
+  digitalWrite(12, LOW);
+  digitalWrite(11, LOW);
+  digitalWrite(10, LOW);
+  digitalWrite(9, LOW);
+  digitalWrite(8, LOW);
+
 }
