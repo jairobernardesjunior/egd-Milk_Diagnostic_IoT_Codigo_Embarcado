@@ -1,4 +1,4 @@
-Essa parte do projeto de hardware e software embutido Milk_Diagnostic_Hardware visa desenvolver o software base que vai fazer
+Essa parte do projeto de hardware e software embarcado Milk_Diagnostic_Hardware visa desenvolver o software base que vai fazer
 as funções de captura da temperatura do leite, da temperatura ambiente, da data e hora do satélite, localização onde o aparelho
 se encontra e enviar para o laticínio via sms ou email. Se a temperatura do leite exceder do limite superior, um sms ou email de 
 alerta será enviado para o nro do phone cadastrado no arquivo de parâmetros.
